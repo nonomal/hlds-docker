@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,7 +19,7 @@
     <meta property="og:url" content="https://jamesiv.es/hlds-docker/" />
     <meta property="og:image" content="https://jamesiv.es/hlds-docker/meta.png" />
     <meta property="og:image:alt" content="Half-Life Dedicated Server with Docker" />
-    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale" content="en_GB" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Half-Life Dedicated Server with Docker" />
     <meta name="twitter:description" content="Half-Life Dedicated Server powered by Docker, supporting all the classic GoldSrc Half-Life games and mods-including Counter-Strike 1.6, Team Fortress Classic, Day of Defeat and more." />
@@ -38,6 +38,22 @@
       "description": "Half-Life Dedicated Server powered by Docker, supporting all the classic GoldSrc Half-Life games and mods-including Counter-Strike 1.6, Team Fortress Classic, Day of Defeat and more. Easily extendable with custom configurations and plugins.",
       "url": "https://jamesiv.es/hlds-docker/",
       "image": "https://jamesiv.es/hlds-docker/meta.png",
+      "author": {
+        "@type": "Person",
+        "name": "James Ives",
+        "url": "https://jamesiv.es"
+      },
+      "sameAs": [
+        "https://github.com/JamesIves/hlds-docker",
+        "https://hub.docker.com/repository/docker/jives/hlds/general",
+        "https://github.com/JamesIves/hlds-docker/pkgs/container/hlds"
+      ],
+      "subjectOf": {
+        "@type": "BlogPosting",
+        "headline": "Half-Life Dedicated Server with Docker",
+        "url": "https://jamesiv.es/blog/experiment/docker/2024/06/20/half-life-dedicated-server-with-docker",
+        "datePublished": "2024-06-20"
+      },
       "applicationCategory": "Utility",
       "operatingSystem": "Docker",
       "offers": {
@@ -258,6 +274,15 @@
         text-decoration: none;
       }
 
+      .action-button svg,
+      .action-button img {
+        fill: currentColor;
+        height: 12px;
+        margin-right: 5px;
+        vertical-align: -1px;
+        width: 12px;
+      }
+
       .action-buttons {
         display: flex;
         gap: 6px;
@@ -317,15 +342,6 @@
         padding-bottom: 8px;
       }
 
-      .footer-container {
-        align-items: center;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        justify-content: center;
-        margin-top: 8px;
-      }
-
       .footer-divider {
         align-items: center;
         color: var(--text-secondary);
@@ -333,19 +349,6 @@
         font-size: 14px;
         line-height: 1;
         opacity: 0.5;
-      }
-
-      .footer-link {
-        color: var(--text-secondary);
-        font-size: 10px;
-        text-align: center;
-      }
-
-      .footer-link img {
-        border: none;
-        display: block;
-        height: 16px;
-        width: 16px;
       }
 
       .footer-links {
@@ -667,6 +670,13 @@
                   Enable Cheats (sv_cheats 1)
                 </label>
               </div>
+
+              <div class="checkbox-row">
+                <label>
+                  <input type="checkbox" id="autoupdate" />
+                  Auto-Update Game Files (AUTO_UPDATE)
+                </label>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -694,6 +704,13 @@
                 >
                   Build a Custom Image
                 </a>
+                <a
+                  href="https://github.com/JamesIves/hlds-docker/blob/beta/MAINTENANCE.md"
+                  target="_blank"
+                  class="action-button"
+                >
+                  Server Maintenance
+                </a>
               </div>
             </fieldset>
 
@@ -702,10 +719,12 @@
               <legend>Learn More</legend>
               <div class="action-buttons-column">
                 <a
+                  id="blog-link"
                   href="https://jamesiv.es/blog/experiment/docker/2024/06/20/half-life-dedicated-server-with-docker"
                   target="_blank"
                   class="action-button"
                 >
+                  <img src="icon.png" alt="" aria-hidden="true" />
                   Read Blog Post
                 </a>
                 <a
@@ -713,6 +732,11 @@
                   target="_blank"
                   class="action-button"
                 >
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path
+                      d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+                    />
+                  </svg>
                   Contribute on GitHub
                 </a>
               </div>
@@ -740,16 +764,6 @@
       </div>
     </div>
 
-      <div class="footer-container">
-        <a
-          href="https://jamesiv.es"
-          target="_blank"
-          title="Built by Jives"
-          class="footer-link"
-        >
-          <img width="16" height="16" src="icon.png" alt="James Ives" />
-        </a>
-      </div>
     </main>
 
     <script>
@@ -960,37 +974,45 @@
         });
       }
 
-      function updateCommand() {
-        const game = document.getElementById("game").value;
-        const servername = document.getElementById("servername").value;
-        const map = document.getElementById("map").value;
-        const maxplayersInput = document.getElementById("maxplayers");
-        let maxplayers = parseInt(maxplayersInput.value, 10);
-        const rcon = document.getElementById("rcon").value;
-        const password = document.getElementById("password").value;
-        const lanmode = document.getElementById("lanmode").checked;
-        const cheats = document.getElementById("cheats").checked;
-
-        // Ensure maxplayers has a minimum value of 1 and keep the input field in sync
-        if (!Number.isFinite(maxplayers) || maxplayers < 1) {
-          maxplayers = 1;
-          maxplayersInput.value = String(maxplayers);
+      // Pure command builder, shared by the form UI and the WebMCP tool below.
+      function buildDockerCommand({
+        game,
+        servername = "Half-Life Dedicated Server",
+        map,
+        maxplayers = 12,
+        rcon = "",
+        password = "",
+        lanmode = false,
+        cheats = false,
+        autoupdate = false,
+      }) {
+        const resolvedMap = map || (mapData[game] && mapData[game][0]) || "";
+        let players = parseInt(maxplayers, 10);
+        if (!Number.isFinite(players) || players < 1) {
+          players = 1;
         }
 
         let command = `docker run -d -ti \\
   --name hlds \\
+  --restart unless-stopped \\
   -v "$(pwd)/config:/temp/config" \\
   -v "$(pwd)/mods:/temp/mods" \\
   -p 27015:27015/udp \\
   -p 27015:27015 \\
-  jives/hlds:${game} \\
+  -p 26900:26900/udp \\`;
+
+        if (autoupdate) {
+          command += `\n  -e AUTO_UPDATE=true \\`;
+        }
+
+        command += `\n  jives/hlds:${game} \\
   +log on`;
 
         if (rcon) {
           command += ` +rcon_password ${rcon}`;
         }
 
-        command += ` +hostname "${servername}" +maxplayers ${maxplayers}`;
+        command += ` +hostname "${servername}" +maxplayers ${players}`;
 
         if (password) {
           command += ` +sv_password "${password}"`;
@@ -1004,9 +1026,106 @@
           command += ` +sv_cheats 1`;
         }
 
-        command += ` +map ${map}`;
+        if (resolvedMap) {
+          command += ` +map ${resolvedMap}`;
+        }
 
-        document.getElementById("output").textContent = command;
+        return command;
+      }
+
+      function updateCommand() {
+        const game = document.getElementById("game").value;
+        const servername = document.getElementById("servername").value;
+        const map = document.getElementById("map").value;
+        const maxplayersInput = document.getElementById("maxplayers");
+        const rcon = document.getElementById("rcon").value;
+        const password = document.getElementById("password").value;
+        const lanmode = document.getElementById("lanmode").checked;
+        const cheats = document.getElementById("cheats").checked;
+        const autoupdate = document.getElementById("autoupdate").checked;
+
+        // Ensure maxplayers has a minimum value of 1 and keep the input field in sync
+        let maxplayers = parseInt(maxplayersInput.value, 10);
+        if (!Number.isFinite(maxplayers) || maxplayers < 1) {
+          maxplayers = 1;
+          maxplayersInput.value = String(maxplayers);
+        }
+
+        document.getElementById("output").textContent = buildDockerCommand({
+          game,
+          servername,
+          map,
+          maxplayers,
+          rcon,
+          password,
+          lanmode,
+          cheats,
+          autoupdate,
+        });
+      }
+
+      // Expose the same command generation as a WebMCP tool for supporting
+      // agents (Chrome 146+ behind the WebMCP flag). No-ops elsewhere.
+      if (document.modelContext) {
+        try {
+          document.modelContext.registerTool({
+            name: "generate_docker_run_command",
+            description:
+              "Generates a docker run command to start a Half-Life Dedicated Server for a given GoldSrc game and settings.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                game: {
+                  type: "string",
+                  description: "The game/mod to run.",
+                  enum: Object.keys(mapData),
+                },
+                map: {
+                  type: "string",
+                  description:
+                    "Starting map. Defaults to the game's first map if omitted.",
+                },
+                servername: {
+                  type: "string",
+                  description: "Server hostname shown in the server browser.",
+                },
+                maxplayers: {
+                  type: "integer",
+                  description: "Maximum number of players (1-32).",
+                  minimum: 1,
+                  maximum: 32,
+                },
+                rcon: {
+                  type: "string",
+                  description:
+                    "RCON password for remote console access. Omit to disable RCON.",
+                },
+                password: {
+                  type: "string",
+                  description:
+                    "Password required to join the server. Omit for a public server.",
+                },
+                lanmode: {
+                  type: "boolean",
+                  description: "Restrict the server to LAN-only (sv_lan 1).",
+                },
+                cheats: {
+                  type: "boolean",
+                  description: "Enable cheats (sv_cheats 1).",
+                },
+                autoupdate: {
+                  type: "boolean",
+                  description:
+                    "Re-check Steam for updated game files on every container start (AUTO_UPDATE).",
+                },
+              },
+              required: ["game"],
+            },
+            execute: async (input) => buildDockerCommand(input),
+          });
+        } catch (e) {
+          console.log("WebMCP tool registration failed:", e);
+        }
       }
 
       function copyToClipboard() {
@@ -1037,13 +1156,16 @@
       document
         .getElementById("cheats")
         .addEventListener("change", updateCommand);
+      document
+        .getElementById("autoupdate")
+        .addEventListener("change", updateCommand);
 
       // Initial setup
       updateMapOptions();
       updateCommand();
 
       const interactiveElements = document.querySelectorAll(
-        "button:not(.close), a, select, input[type='radio']"
+        "button:not(.close), a:not(#blog-link), select, input[type='radio']"
       );
       interactiveElements.forEach((element) => {
         element.addEventListener("mousedown", playButtonSound);
@@ -1076,14 +1198,14 @@
         });
       }
       
-      // Attach wise sound to footer icon
+      // Attach wise sound to the blog post link's jives face
       const wiseSound = new Audio("wise.mp3");
       wiseSound.volume = 0.6;
-      const footerLink = document.querySelector(".footer-link");
-      if (footerLink) {
-        footerLink.addEventListener("click", (e) => {
+      const blogLink = document.getElementById("blog-link");
+      if (blogLink) {
+        blogLink.addEventListener("click", () => {
           wiseSound.currentTime = 0;
-          wiseSound.play().catch(e => console.log("Audio play failed:", e));
+          wiseSound.play().catch((e) => console.log("Audio play failed:", e));
         });
       }
 

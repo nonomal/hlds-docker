@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
 
 # Sets an environment variable for the game to install.
 # Supported games: valve, cstrike, czero, dod, dmc, gearbox, ricochet, tfc
@@ -34,8 +34,12 @@ LABEL org.opencontainers.image.version="${VERSION}"
 # Installs the necessary dependencies for the SteamCMD installer.
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl rsync file libc6:i386 lib32stdc++6 ca-certificates && \
+    apt-get install -y --no-install-recommends curl rsync file tini libc6:i386 lib32stdc++6 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+
+# Removes the base image's bundled Pebble service manager - unused here since
+# tini is PID 1, and its Go stdlib gets flagged by vulnerability scans.
+RUN rm -f /usr/bin/pebble
 
 # Creates a new user and group for the SteamCMD installer.
 RUN groupadd -r steam && \
@@ -65,6 +69,10 @@ RUN curl -v -sL media.steampowered.com/client/installer/steamcmd_linux.tar.gz | 
     file /opt/steam/linux32/steamcmd && \
     ./steamcmd.sh +runscript /opt/steam/hlds.txt
 
+# Removes SteamCMD's bundled libstdc++.so.6/libgcc_s.so.1, which shadow the
+# system libs above via LD_LIBRARY_PATH and break newer-ABI mods (tfc-legacy).
+RUN rm -f /opt/steam/hlds/libstdc++.so.6 /opt/steam/hlds/libgcc_s.so.1
+
 # Writes the steam_appid.txt file to the hlds directory with the title id for Half-Life.
 # Patches a known issue with the Steam client.
 RUN mkdir -p $HOME/.steam \
@@ -73,13 +81,19 @@ RUN mkdir -p $HOME/.steam \
 
 WORKDIR /opt/steam/hlds
 
-# Copies the entrypoint script to the container and sets the necessary permissions.
+# Copies the entrypoint and healthcheck scripts to the container and sets the necessary permissions.
 COPY --chown=steam:steam ./entrypoint.sh ./entrypoint.sh
+COPY --chown=steam:steam ./healthcheck.sh ./healthcheck.sh
 COPY --chown=steam:steam config $GAME
 COPY --chown=steam:steam mods .
 
-# Sets the entrypoint script as executable.
-RUN chmod +x ./entrypoint.sh
+# Sets the entrypoint and healthcheck scripts as executable.
+RUN chmod +x ./entrypoint.sh ./healthcheck.sh
 
+# Polls with a real A2S_INFO query so a hung/crashed server is distinguishable from a healthy one.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["./healthcheck.sh"]
 
-ENTRYPOINT ["./entrypoint.sh"]
+# tini is PID 1 so docker stop's SIGTERM is actually handled - hlds_run
+# doesn't trap it, and untrapped signals are ignored by default for PID 1.
+ENTRYPOINT ["/usr/bin/tini", "--", "./entrypoint.sh"]

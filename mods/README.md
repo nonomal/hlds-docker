@@ -1,5 +1,7 @@
 # Custom Mods
 
+<img align="right" width="180" height="auto"  src="../.github/docs/docker.svg" alt="Docker in the Half-Life Colours">
+
 If you want to run a custom mod, you can do so with the `mods` directory. Your directory setup should look something like the following where you're running either `docker run` or `docker compose` next to where the `mods` directory is located.
 
 ```
@@ -15,7 +17,7 @@ If you want to run a custom mod, you can do so with the `mods` directory. Your d
 
 The `mods` directory is volume mapped within the root directory of the Half-Life Dedicated Server client on startup. For example, if you wanted to add a mod named `decay`, you'd place it as a subfolder here, i.e., `mods/decay`. Once the container starts, it would be placed in the following directory within the container.
 
-The mods directory should be volume mapped to `/temp/mods`, for example `./mods:/temp/mods`, once the container starts it will re-write the files into the correct place so the Half-Life Dedicated Server client recognizes them.
+The mods directory should be volume mapped to `/temp/mods`, for example `./mods:/temp/mods`, once the container starts it will re-write the files into the correct place so the Half-Life Dedicated Server client recognises them.
 
 ```
 ├── 📦 hlds
@@ -52,3 +54,11 @@ export GAME=decay
 
 > [!TIP]  
 > When using a pre-built image, you'll likely want to use the `valve` base image (`jives/hlds:valve`).
+
+## Resources 📚
+
+- [Getting Started and Usage](../README.md)
+- [Server Configs and Plugins](../config/README.md)
+- [Building a Custom Image](../container/README.md)
+- [Server Maintenance](../MAINTENANCE.md)
+- [Contributing](../CONTRIBUTING.md)

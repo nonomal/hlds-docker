@@ -1,5 +1,7 @@
 # Configs and Plugins
 
+<img align="right" width="180" height="auto"  src="../.github/docs/docker.svg" alt="Docker in the Half-Life Colours">
+
 If you wish to add server configurations, such as add-ons, plugins, map rotations, etc, you can add them to the `config` directory. Your directory setup should look something like the following where you're running either `docker run` or `docker compose` next to where the `config` directory is located.
 
 ```
@@ -14,10 +16,10 @@ If you wish to add server configurations, such as add-ons, plugins, map rotation
 
 The `config` directory is volume-mapped within the directory for the game for which you're starting the container. For example, if you're starting a container for `cstrike`, you can add things like `mapcycle.txt` or `motd.txt` here, and it would appear within the corresponding `cstrike` directory within the container.
 
-The config directory should be volume mapped to `/temp/config`, for example `./config:/temp/config`, once the container starts it will re-write the files into the correct place so the Half-Life Dedicated Server client recognizes them.
+The config directory should be volume mapped to `/temp/config`, for example `./config:/temp/config`, once the container starts it will re-write the files into the correct place so the Half-Life Dedicated Server client recognises them.
 
 > [!NOTE]  
-> The startup examples posted in the project README already have this directory volume mapped accordingly. If you've strayed from the suggested setup, [please refer back to it to get started](../../README.md).
+> The startup examples posted in the project README already have this directory volume mapped accordingly. If you've strayed from the suggested setup, [please refer back to it to get started](../README.md).
 
 ```
 ├── 📦 hlds
@@ -36,3 +38,11 @@ The config directory should be volume mapped to `/temp/config`, for example `./c
 1. Start the image as you usually would, either with `docker run` or `docker compose up`.
 
 For a list of all the available server configuration types, [refer to the Valve Developer Wiki](https://developer.valvesoftware.com/wiki/Main_Page).
+
+## Resources 📚
+
+- [Getting Started and Usage](../README.md)
+- [Custom Mods](../mods/README.md)
+- [Building a Custom Image](../container/README.md)
+- [Server Maintenance](../MAINTENANCE.md)
+- [Contributing](../CONTRIBUTING.md)

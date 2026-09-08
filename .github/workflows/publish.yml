@@ -1,38 +1,288 @@
-name: Publish Docker Images 🐋 📦
+name: Release 🚀
 concurrency: ci-${{ github.ref }}
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version component to bump"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+  # Rebuilds main against the current Steam depot weekly - never touches the beta -> main promotion.
+  schedule:
+    - cron: "0 6 * * 0"
+env:
+  CANDIDATE_REF: release-candidate
 jobs:
-  version:
-    name: Bump Version 🏷️
+  check-for-updates:
+    name: Check Steam For Updates 🔍
+    # Manual dispatch is always intentional; only the weekly timer needs to check first.
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     outputs:
-      version: ${{ steps.create_tag.outputs.new_tag }}
+      changed: ${{ steps.check.outputs.changed }}
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # continue-on-error so a download failure still lets the fail-safe below run.
+      - name: Install SteamCMD 🎮
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/steamcmd
+          curl -sL media.steampowered.com/client/installer/steamcmd_linux.tar.gz | tar xzvf - -C /tmp/steamcmd
+
+      # || true: same fail-safe reasoning as the step above.
+      - name: Query Steam App Info 🔍
+        run: |
+          /tmp/steamcmd/steamcmd.sh \
+            +@ShutdownOnFailedCommand 0 \
+            +@NoPromptForPassword 1 \
+            +login anonymous \
+            +app_info_update 1 \
+            +app_info_print 90 \
+            +quit > /tmp/app_info.txt || true
+
+      - name: Compare Against Last Release 🔍
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/check_steam_updates.py /tmp/app_info.txt
+
+  version:
+    name: Compute Release Version 🔢
+    needs: check-for-updates
+    # always() overrides default skip-propagation from check-for-updates being skipped on dispatch.
+    if: |
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.check-for-updates.outputs.changed == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: "0"
 
-      - name: Bump Version and Create Tag 🏷️
-        id: create_tag
-        uses: anothrNick/github-tag-action@1.75.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WITH_V: true
-          DRY_RUN: true
+      # Scheduled runs never touch the beta -> main promotion, so there's no branch to guard here.
+      - name: Validate Dispatch Branch 🌿
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ github.ref_name }}" != "beta" ]; then
+            echo "::error::Releases must be dispatched from 'beta' (got '${{ github.ref_name }}')."
+            exit 1
+          fi
 
-  build:
-    name: Build Docker Image 🐳
+      - name: Compute Next Version 🔢
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh release view --json tagName --jq .tagName 2>/dev/null || echo "v0.0.0")
+          VERSION="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          # Scheduled runs have no inputs context, so default to patch.
+          BUMP="${{ inputs.bump }}"
+          BUMP="${BUMP:-patch}"
+
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "Bumping $LATEST -> $NEW_VERSION ($BUMP)"
+
+          if gh release view "$NEW_VERSION" >/dev/null 2>&1; then
+            echo "::error::A release for '$NEW_VERSION' already exists."
+            exit 1
+          fi
+
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+  prepare:
+    name: Prepare Release Candidate 🔀
     needs: version
+    # Scheduled runs never promote new commits from beta, so there's nothing to merge.
+    if: |
+      always() && needs.version.result == 'success' &&
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      packages: write
       contents: write
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: "0"
+
+      # Pushed to a scratch ref, not main directly, so nothing ships until this commit passes tests.
+      - name: Merge beta into a release candidate 🔀
+        run: |
+          git fetch origin beta
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            merge origin/beta --no-edit
+          git push --force origin "HEAD:refs/heads/${{ env.CANDIDATE_REF }}"
+
+  test:
+    name: Test Candidate 🧪
+    needs: [version, prepare]
+    # always() overrides default skip-propagation from prepare being skipped on schedule.
+    if: |
+      always() && needs.version.result == 'success' &&
+      (github.event_name == 'schedule' || needs.prepare.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      matrix:
+        game:
+          [
+            cstrike,
+            cstrike-legacy,
+            valve,
+            valve-legacy,
+            czero,
+            czero-legacy,
+            dmc,
+            gearbox,
+            ricochet,
+            dod,
+            tfc,
+            tfc-legacy,
+          ]
+    steps:
+      # Schedule tests main as-is; dispatch tests the not-yet-promoted candidate from prepare.
+      - name: Checkout 🛎️
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'main' || env.CANDIDATE_REF }}
+
+      - name: Set up Docker Buildx 🛠️
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Set GAME environment variable 🎮
+        working-directory: ./container
+        run: |
+          GAME=${{ matrix.game }}
+          GAME=${GAME%-legacy}
+          echo "GAME=$GAME" >> "$GITHUB_ENV"
+
+      - name: Replace fallback value in Dockerfile and entrypoint.sh 📝
+        working-directory: ./container
+        run: |
+          sed -i "s/\${GAME:-valve}/\${GAME:-${{ env.GAME }}}/g" Dockerfile
+          sed -i "s/\${GAME:-valve}/\${GAME:-${{ env.GAME }}}/g" entrypoint.sh
+
+      - name: Configure SteamCMD to install the legacy engine version 🚒
+        if: contains(matrix.game, 'legacy')
+        run: echo "FLAG=-beta steam_legacy" >> "$GITHUB_ENV"
+
+      - name: Build Docker Image 🐳
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        env:
+          GAME: ${{ env.GAME }}
+          FLAG: ${{ env.FLAG }}
+        with:
+          context: ./container
+          push: false
+          load: true
+          tags: hlds-release-candidate:${{ matrix.game }}
+          build-args: |
+            GAME=${{ env.GAME }}
+            FLAG=${{ env.FLAG }}
+          cache-from: type=gha,scope=release-${{ matrix.game }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.game }}
+
+      - name: Get Docker Image ID 🆔
+        id: get_image_id
+        run: echo "image_id=$(docker images -q | head -n 1)" >> "$GITHUB_ENV"
+
+      - name: Scan Image for Vulnerabilities 🔍
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.image_id }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload Vulnerability Scan Results 📤
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-release-${{ matrix.game }}
+
+      - name: Test Image 🧪
+        uses: ./.github/actions/test-hlds-image
+        with:
+          game: ${{ env.GAME }}
+          image: ${{ env.image_id }}
+          container-name: hlds
+
+      - name: Cleanup 🧹
+        if: always()
+        run: |
+          docker logs hlds || true
+          docker stop hlds || true
+          docker rm hlds || true
+          docker system prune --all --force
+
+  merge:
+    name: Merge Candidate into main 🔀
+    needs: test
+    # No candidate ref on the scheduled path (prepare didn't run) - nothing to promote.
+    if: |
+      always() && needs.test.result == 'success' &&
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: "0"
+
+      # Fast-forward only - the candidate is already proven, so this is just moving main forward.
+      - name: Fast-forward main to the tested candidate 🔀
+        run: |
+          git fetch origin "${{ env.CANDIDATE_REF }}"
+          git merge --ff-only "origin/${{ env.CANDIDATE_REF }}"
+          git push origin main
+
+      - name: Delete the release candidate ref 🧹
+        if: always()
+        run: git push origin --delete "${{ env.CANDIDATE_REF }}" || true
+
+  release:
+    name: Build and Publish Image 🐳
+    needs: [version, merge, test]
+    # always() overrides default skip-propagation from merge being skipped on schedule.
+    if: |
+      always() && needs.version.result == 'success' && needs.test.result == 'success' &&
+      (github.event_name == 'schedule' || needs.merge.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
       attestations: write
       id-token: write
     strategy:
@@ -52,23 +302,25 @@ jobs:
             tfc,
             tfc-legacy,
           ]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: "0"
+          ref: main
 
       - name: Set up Docker Buildx  🛠️
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Login to DockerHub 🐳
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Login to GitHub Container Registry 🐳
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -79,7 +331,7 @@ jobs:
         run: |
           GAME=${{ matrix.game }}
           GAME=${GAME%-legacy}
-          echo "GAME=$GAME" >> $GITHUB_ENV
+          echo "GAME=$GAME" >> "$GITHUB_ENV"
 
       - name: Replace fallback value in Dockerfile and entrypoint.sh 📝
         working-directory: ./container
@@ -89,7 +341,7 @@ jobs:
 
       - name: Configure SteamCMD to install the legacy engine version 🚒
         if: contains(matrix.game, 'legacy')
-        run: echo "FLAG=-beta steam_legacy" >> $GITHUB_ENV
+        run: echo "FLAG=-beta steam_legacy" >> "$GITHUB_ENV"
 
       - name: Set Game Title 🎮
         id: game_title
@@ -105,18 +357,20 @@ jobs:
             ["tfc"]="Team Fortress Classic"
           )
           GAME_TITLE="${GAME_TITLES[${{ env.GAME }}]:-${{ env.GAME }}}"
-          echo "game_title=$GAME_TITLE" >> $GITHUB_ENV
+          echo "game_title=$GAME_TITLE" >> "$GITHUB_ENV"
 
       - name: Docker Metadata 🏷️
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: |
             jives/hlds
             ghcr.io/${{ github.repository_owner }}/hlds
           tags: |
             type=raw,value=${{ matrix.game }}
-            type=raw,value=${{ matrix.game }}-${{ needs.version.outputs.version }}
+            type=raw,value=${{ matrix.game }}-${{ env.VERSION }}
           labels: |
             org.opencontainers.image.title=Half Life Dedicated Server for ${{ env.game_title }}
             org.opencontainers.image.description=🐋 📦 Half Life Dedicated Server for ${{ env.game_title }}. Supports all the classic GoldSrc Half-Life games and mods, including the ability to add custom configurations and plugins.
@@ -126,7 +380,7 @@ jobs:
             org.opencontainers.image.url=https://github.com/jamesives/hlds-docker
             org.opencontainers.image.documentation=https://github.com/jamesives/hlds-docker
             org.opencontainers.image.source=https://github.com/jamesives/hlds-docker
-            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.version=${{ env.VERSION }}
           annotations: |
             org.opencontainers.image.title=Half Life Dedicated Server for ${{ env.game_title }}
             org.opencontainers.image.description=🐋 📦 Half Life Dedicated Server for ${{ env.game_title }}. Supports all the classic GoldSrc Half-Life games and mods, including the ability to add custom configurations and plugins.
@@ -136,165 +390,97 @@ jobs:
             org.opencontainers.image.url=https://github.com/jamesives/hlds-docker
             org.opencontainers.image.documentation=https://github.com/jamesives/hlds-docker
             org.opencontainers.image.source=https://github.com/jamesives/hlds-docker
-            org.opencontainers.image.version=${{ needs.version.outputs.version }}
-
-      - name: Build Docker Image 🐳
-        uses: docker/build-push-action@v6
-        env:
-          GAME: ${{ env.GAME }}
-          FLAG: ${{ env.FLAG }}
-          VERSION: ${{ needs.version.outputs.version }}
-          IMAGE: jives/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
-        with:
-          context: ./container
-          push: false
-          load: true
-          tags: |
-            jives/hlds:${{ matrix.game }}
-            jives/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
-          build-args: |
-            GAME=${{ env.GAME }}
-            FLAG=${{ env.FLAG }}
-            VERSION=${{ needs.version.outputs.version }}
-            IMAGE=jives/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
-
-      - name: Get Docker Image ID 🆔
-        id: get_image_id
-        run: echo "image_id=$(docker images -q | head -n 1)" >> $GITHUB_ENV
-
-      - name: Add Custom Mod Content 📂
-        run: |
-          mkdir -p ./mods/decay
-          touch ./mods/decay/plugin.ini
-
-      - name: Add Configuration 📂
-        run: |
-          mkdir -p ./config
-          mkdir -p ./config/maps
-          touch ./config/test.cfg
-          touch ./config/maps/crazytank.bsp
-
-      - name: Run Docker Container 🐳
-        run: |
-          docker run -d -ti \
-            --name hlds \
-            -v "./config:/temp/config" \
-            -v "./mods:/temp/mods" \
-            -p 27015:27015/udp \
-            -p 27015:27015 \
-            -p 26900:26900/udp \
-            -e GAME=${GAME} \
-            ${{ env.image_id }}  \
-            "+log on +rcon_password changeme +maxplayers 12"
-          sleep 5
-
-      - name: Validate Directory Mappings 📂
-        run: |
-          # Check if plugin.ini exists in the decay directory
-          if [ "$(docker exec hlds ls /opt/steam/hlds/decay | grep -c 'plugin.ini')" -eq 0 ]; then
-            echo "plugin.ini file is missing in the decay directory!"
-            exit 1
-          fi
-
-          # Check if test.cfg exists in the game directory
-          if [ "$(docker exec hlds ls /opt/steam/hlds/${{ env.GAME }} | grep -c 'test.cfg')" -eq 0 ]; then
-            echo "test.cfg file is missing in the ${{ env.GAME }} directory!"
-            exit 1
-          fi
-
-          # Check if crazytank.bsp exists in the maps directory
-          if [ "$(docker exec hlds ls /opt/steam/hlds/${{ env.GAME }}/maps | grep -c 'crazytank.bsp')" -eq 0 ]; then
-            echo "crazytank.bsp file is missing in the maps directory!"
-            exit 1
-          fi
-
-          echo "Volume mappings work as expectected!"
-
-      - name: Validate Game Data Is Available 📂
-        run: |
-          GAME_NAME=$(echo "${{ env.GAME }}" | sed 's/-legacy//')
-          if [ "$(docker exec hlds ls /opt/steam/hlds | grep -c "$GAME_NAME")" -eq 0 ]; then
-            echo "$GAME_NAME directory is missing!"
-            exit 1
-          fi
+            org.opencontainers.image.version=${{ env.VERSION }}
 
       - name: Build and Push Docker Image to DockerHub 🐳
-        uses: docker/build-push-action@v6
+        id: push_dockerhub
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         env:
           GAME: ${{ env.GAME }}
           FLAG: ${{ env.FLAG }}
-          VERSION: ${{ needs.version.outputs.version }}
-          IMAGE: jives/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
+          IMAGE: jives/hlds:${{ matrix.game }}-${{ env.VERSION }}
         with:
           context: ./container
           push: true
           tags: |
             jives/hlds:${{ matrix.game }}
-            jives/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
+            jives/hlds:${{ matrix.game }}-${{ env.VERSION }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
             GAME=${{ env.GAME }}
             FLAG=${{ env.FLAG }}
-            VERSION=${{ needs.version.outputs.version }}
-            IMAGE=jives/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
+            VERSION=${{ env.VERSION }}
+            IMAGE=jives/hlds:${{ matrix.game }}-${{ env.VERSION }}
+          cache-from: type=gha,scope=release-${{ matrix.game }}
+
+      - name: Attest DockerHub Image Provenance 📜
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: index.docker.io/jives/hlds
+          subject-digest: ${{ steps.push_dockerhub.outputs.digest }}
 
       - name: Set repo owner to lowercase 📝
         id: repo_owner
         run: |
           REPO_OWNER=$(echo ${{ github.repository_owner }} | awk '{print tolower($0)}')
-          echo "repo_owner=$REPO_OWNER" >> $GITHUB_ENV
+          echo "repo_owner=$REPO_OWNER" >> "$GITHUB_ENV"
 
       - name: Build and Push Docker Image to GitHub Container Registry 🐳
-        uses: docker/build-push-action@v6
+        id: push_ghcr
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         env:
-          GAME: ${{ matrix.game }}
+          GAME: ${{ env.GAME }}
           FLAG: ${{ env.FLAG }}
-          VERSION: ${{ needs.version.outputs.version }}
-          IMAGE: ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
+          IMAGE: ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}-${{ env.VERSION }}
         with:
           context: ./container
           push: true
           tags: |
             ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}
-            ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
+            ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}-${{ env.VERSION }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
             GAME=${{ env.GAME }}
             FLAG=${{ env.FLAG }}
-            VERSION=${{ needs.version.outputs.version }}
-            IMAGE=ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}-${{ needs.version.outputs.version }}
+            VERSION=${{ env.VERSION }}
+            IMAGE=ghcr.io/${{ env.repo_owner }}/hlds:${{ matrix.game }}-${{ env.VERSION }}
+          cache-from: type=gha,scope=release-${{ matrix.game }}
+
+      - name: Attest GHCR Image Provenance 📜
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ env.repo_owner }}/hlds
+          subject-digest: ${{ steps.push_ghcr.outputs.digest }}
+          push-to-registry: true
 
   publish:
     name: Publish GitHub Release 🚀
-    needs: build
+    needs: [version, release]
+    if: always() && needs.version.result == 'success' && needs.release.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           fetch-depth: "0"
 
-      - name: Bump Version and Create Tag 🏷️
-        id: create_tag
-        if: github.ref == 'refs/heads/main'
-        uses: anothrNick/github-tag-action@1.75.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WITH_V: true
-          DEFAULT_BUMP: patch
-
       - name: Create Release 🚀
-        id: create_release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.create_tag.outputs.new_tag }}
-          name: ${{ steps.create_tag.outputs.new_tag }}
-          draft: false
-          prerelease: false
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            gh release create "${{ needs.version.outputs.version }}" \
+              --notes "Automated weekly release to keep published game files current with Steam. No code changes." \
+              --title "${{ needs.version.outputs.version }}" \
+              --target main
+          else
+            gh release create "${{ needs.version.outputs.version }}" \
+              --generate-notes \
+              --title "${{ needs.version.outputs.version }}" \
+              --target main
+          fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
